@@ -1,0 +1,3 @@
+[submodule "3rd/googletest"]
+	path = 3rd/googletest
+	url = git@gitee.com:DLUT_MeshGene/googletest.git
