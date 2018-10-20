@@ -1,8 +1,3 @@
-// Gmsh - Copyright (C) 1997-2018 C. Geuzaine, J.-F. Remacle
-//
-// See the LICENSE.txt file for license information. Please report all
-// bugs and problems to the public mailing list <gmsh@onelab.info>.
-
 #if defined(_OPENMP)
 #include <omp.h>
 #endif
@@ -13,10 +8,19 @@
 #include <stdlib.h>
 #include <stack>
 #include <algorithm>
+#include <cstdint>
 
-extern void exactinit(int, int, int, double, double, double);
+typedef double REAL;
+extern void exactinit(int, int, int, REAL, REAL, REAL);
+extern REAL orient3d(REAL *pa, REAL *pb, REAL *pc, REAL *pd);
+extern REAL insphere(REAL *pa, REAL *pb, REAL *pc, REAL *pd, REAL *pe);
+extern REAL orient4d(REAL *pa, REAL *pb, REAL *pc, REAL *pd, REAL *pe,
+  REAL ah, REAL bh, REAL ch, REAL dh, REAL eh);
 
 DELAU_NS_BEGIN
+
+
+#include "_private/delaunay_ds.h"
 
 void BoundaryBox(const std::vector<double>& points, double bbox[2][3], double scale)
 {
@@ -55,7 +59,7 @@ void DelaunayTriangulation(const std::vector<double>& points, std::vector<size_t
   std::vector<size_t> indices;
   SortHilbert(points, indices);
   double bbox[2][3];
-  BoundaryBox(points, bbox, 2.5);
+  BoundaryBox(points, bbox, 1.01);
   exactinit(0, 1, 0, bbox[1][0] - bbox[0][0], bbox[1][1] - bbox[0][1], bbox[1][2] - bbox[0][2]);
 
   int nbBlocks = 1;
