@@ -1,3 +1,6 @@
 [submodule "3rd/googletest"]
 	path = 3rd/googletest
 	url = git@gitee.com:DLUT_MeshGene/googletest.git
+[submodule "3rd/tetgen"]
+	path = 3rd/tetgen
+	url = https://gitee.com/DLUT_MeshGene/tetgen.git
