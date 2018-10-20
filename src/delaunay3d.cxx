@@ -12,34 +12,106 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stack>
+#include <algorithm>
+
+extern void exactinit(int, int, int, double, double, double);
 
 DELAU_NS_BEGIN
-void DelaunayTriangulation(const size_t numThreads, size_t arraysize, PointFunctor vertices, std::vector<size_t> &)
+
+void BoundaryBox(const std::vector<double>& points, double bbox[2][3], double scale)
 {
-  std::vector<size_t> indices;
-  SortHilbert(arraysize, vertices, indices);
-  size_t nbBlocks = numThreads;
+  bbox[0][0] = bbox[0][1] = bbox[0][2] = DBL_MAX;
+  bbox[1][0] = bbox[1][1] = bbox[1][2] = -DBL_MAX;
 
-  std::vector<std::vector<size_t> > assignTo(nbBlocks);
-
-  for (size_t i = 1; i < indices.size(); i++) {
-    size_t start = indices[i - 1];
-    size_t end = indices[i];
-    size_t sizePerBlock = (nbBlocks * ((end - start) / nbBlocks)) / nbBlocks;
-    // printf("sizePerBlock[%3d] = %8d\n",i,sizePerBlock);
-    int currentBlock = 0;
-    int localCounter = 0;
+  size_t nPoint = points.size() / 3;
+  for (size_t i = 0; i < nPoint; i++)
+  {
+    for (int j = 0; j < 3; j++)
     {
-      for (int jPt = start; jPt < end; jPt++) {
-        if (localCounter++ >= sizePerBlock && currentBlock != nbBlocks - 1) {
-          localCounter = 0;
-          currentBlock++;
-        }
-        assignTo[currentBlock].push_back(jPt);
-      }
+      bbox[0][j] = std::min(bbox[0][j], points[i * 3 + j]);
+      bbox[1][j] = std::max(bbox[0][j], points[i * 3 + j]);
     }
   }
 
+  if (fabs(scale - 1.0) > std::numeric_limits<double>::epsilon())
+  {
+    double factor = scale - 1.0;
+    for (int j = 0; j < 3; j++)
+    {
+      double len = bbox[1][j] - bbox[0][j];
+      len *= factor;
+      bbox[0][j] -= len;
+      bbox[1][j] += len;
+    }
+  }
+}
+
+void DelaunayTriangulation(const std::vector<double>& points, std::vector<size_t> &)
+{
+  enum
+  {
+    eInserted=0
+  };
+  std::vector<size_t> indices;
+  SortHilbert(points, indices);
+  double bbox[2][3];
+  BoundaryBox(points, bbox, 2.5);
+  exactinit(0, 1, 0, bbox[1][0] - bbox[0][0], bbox[1][1] - bbox[0][1], bbox[1][2] - bbox[0][2]);
+
+  int nbBlocks = 1;
+#if defined(_OPENMP)
+  nbBlocks=omp_get_max_threads();
+#endif
+
+  std::vector<std::vector<size_t> > assignTo(nbBlocks);
+  std::vector<size_t> assignTo0;
+  std::vector<int> pointsColor(indices.size(),0);
+
+  auto init = [&]() {
+    size_t sizePerBlock = (nbBlocks * (indices.size() / nbBlocks)) / nbBlocks;
+    size_t start = 0;
+    for (int i = 0; i < nbBlocks; i++)
+    {
+      size_t end = start + sizePerBlock;
+      assignTo[i].reserve(sizePerBlock);
+      for (size_t j = start; j < end; j++)
+      {
+        assignTo[i].push_back(indices[j]);
+        pointsColor[indices[j]] = i + 1;
+      }
+      start = end;
+    }
+
+    for (size_t j = start; j < indices.size(); j++)
+    {
+      assignTo[nbBlocks - 1].push_back(indices[j]);
+      pointsColor[indices[j]] = nbBlocks;
+    }
+
+    srand((unsigned)points.size());
+    size_t npoint0 = sizePerBlock /10;
+    assignTo0.reserve(npoint0*nbBlocks);
+
+    for (int i = 0; i < nbBlocks; i++)
+    {
+      for (size_t j = 0; j < npoint0; j++)
+      {
+         auto idx= rand() % assignTo[i].size();
+         if (pointsColor[assignTo[i][idx]] != eInserted)
+         {
+           assignTo0.push_back(assignTo[i][idx]);
+           pointsColor[assignTo[i][idx]] = eInserted;
+         }
+      }
+    }
+  };
+  
+  auto insertPoint = [&](const std::vector<size_t>& node2Insert) {
+
+  };
+
+  init();
+  insertPoint(assignTo0);
 }
 
 

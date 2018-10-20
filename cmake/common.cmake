@@ -88,6 +88,8 @@ macro(set_static_lib)
   endif()
 endmacro()
 
+macro(configure_runtime)
+endmacro()
 
 if(ENABLE_OPENMP)
   include(FindOpenMP)

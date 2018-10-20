@@ -12,6 +12,7 @@ include(cmake/setting.cmake)
 
 include(${DIR_PROJ_ROOT}/cmake/common.cmake)
 add_subdirectory(3rd/googletest)
+add_subdirectory(3rd/tetgen)
 
 set(MODULE_SOURCES 
     src/delaunay3d.cxx
@@ -27,7 +28,7 @@ include_directories(${DIR_PROJ_ROOT}/3rd/googletest/googletest/include)
 add_boost()
 add_definitions(-D_ENABLE_UNITEST)
 
-list(APPEND EXTERNAL_LIBRARIES gtest gtest_main)
+list(APPEND EXTERNAL_LIBRARIES gtest gtest_main tetgen)
 add_executable(${MODULE_NAME} ${MODULE_SOURCES})
 
 if(MSVC)

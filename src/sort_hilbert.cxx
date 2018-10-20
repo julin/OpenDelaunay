@@ -1,10 +1,41 @@
 #include <delaunay3d.h>
+#include "spatial_sort.hxx"
 
 #include <memory>
 #include <algorithm>
 #include <cmath>
+#include <functional>
 
 DELAU_NS_BEGIN
+typedef std::function<void(size_t, double*)> PointFunctor;
+void SortHilbert(size_t arraysize, PointFunctor vertices, std::vector<size_t> &indices);
+void BoundaryBox(size_t arraysize, PointFunctor vertices, double bbox[2][3], double scale = 1.0);
+
+void BoundaryBox(size_t nPoint, PointFunctor pointFun, double bbox[2][3], double scale)
+{
+  double pos[3];
+  for (size_t i = 0; i < nPoint; i++) {
+    pointFun(i, pos);
+    for (int j = 0; j < 3; j++)
+    {
+      bbox[0][j] = std::min(bbox[0][j], pos[j]);
+      bbox[1][j] = std::max(bbox[0][j], pos[j]);
+    }
+  }
+
+  if (fabs(scale - 1.0) > std::numeric_limits<double>::epsilon())
+  {
+    double factor = scale - 1.0;
+    for (int j = 0; j < 3; j++)
+    {
+      double len = bbox[1][j] - bbox[0][j];
+      len *= factor;
+      bbox[0][j] -= len;
+      bbox[1][j] += len;
+    }
+  }
+}
+
 struct HilbertSortB {
   // The code for generating table transgc from:
   // http://graphics.stanford.edu/~seander/bithacks.html.
@@ -13,56 +44,56 @@ struct HilbertSortB {
   int maxDepth;
   int Limit;
   double bbox[2][3];
+  PointFunctor pointFun;
+  struct Vert
+  {
+    size_t pos;
+  };
+
+  void GetPosition(const Vert* vi,double* pos)const
+  {
+    pointFun(vi->pos,pos);
+  }
   void ComputeGrayCode(int n);
-
-
-  size_t Split(PointFunctor vertices, size_t arraysize, size_t*,
-    int GrayCode0, int GrayCode1,
+  int Split(Vert **vertices, int arraysize, int GrayCode0, int GrayCode1,
     double BoundingBoxXmin, double BoundingBoxXmax,
     double BoundingBoxYmin, double BoundingBoxYmax,
     double BoundingBoxZmin, double BoundingBoxZmax);
-  void Sort(PointFunctor vertices, size_t arraysize, size_t*,
-    size_t e, size_t d,
+  void Sort(Vert **vertices, int arraysize, int e, int d,
     double BoundingBoxXmin, double BoundingBoxXmax,
     double BoundingBoxYmin, double BoundingBoxYmax,
     double BoundingBoxZmin, double BoundingBoxZmax, int depth);
-
-  HilbertSortB(int m = 0, int l = 2) : maxDepth(m), Limit(l)
+  HilbertSortB(PointFunctor vertices,int m = 0, int l = 2) : maxDepth(m), Limit(l)
   {
-    bbox[0][0] = bbox[0][1] = bbox[0][2] = DBL_MAX;
-    bbox[1][0] = bbox[1][1] = bbox[1][2] = -DBL_MAX;
+    pointFun = vertices;
     ComputeGrayCode(3);
   }
-
-  void MultiscaleSortHilbert(PointFunctor vertices,
-    size_t arraysize, size_t* indexs, size_t threshold,
+  void MultiscaleSortHilbert(Vert **vertices, int arraysize, int threshold,
     double ratio, int *depth,
     std::vector<size_t> &indices)
   {
-    size_t middle = 0;
+    int middle = 0;
     if (arraysize >= threshold) {
       (*depth)++;
-      middle = size_t(arraysize * ratio);
-      MultiscaleSortHilbert(vertices, middle, indexs, threshold, ratio, depth, indices);
+      middle = (int)(arraysize * ratio);
+      MultiscaleSortHilbert(vertices, middle, threshold, ratio, depth, indices);
     }
     indices.push_back(middle);
     // printf("chunk starts at %d and size %d\n", middle, arraysize - middle);
-    Sort(vertices, arraysize - middle, indexs + middle, 0, 0, bbox[0][0],
+    Sort(&(vertices[middle]), arraysize - middle, 0, 0, bbox[0][0],
       bbox[1][0], bbox[0][1], bbox[1][1], bbox[0][2],
       bbox[1][2], 0);
   }
-
-
-  void Apply(size_t nPoint, PointFunctor pointFun, std::vector<size_t> &indices)
+  void Apply(std::vector<Vert *> &v, std::vector<size_t> &indices)
   {
     indices.clear();
-    if (nPoint<1) return;
-    double pos[3];
-    std::unique_ptr<size_t[]> indexs(new size_t[nPoint]);
+    if (v.empty()) return;
 
-    for (size_t i = 0; i < nPoint; i++) {
-      indexs[i] = i;
-      pointFun(i, pos);
+    double pos[3];
+    bbox[0][0] = bbox[0][1] = bbox[0][2] = DBL_MAX;
+    bbox[1][0] = bbox[1][1] = bbox[1][2] = -DBL_MAX;
+    for (size_t i = 0; i < v.size(); i++) {
+      GetPosition(v[i],pos);
       for (int j = 0; j < 3; j++)
       {
         bbox[0][j] = std::min(bbox[0][j], pos[j]);
@@ -77,10 +108,11 @@ struct HilbertSortB {
       bbox[1][j] += len;
     }
 
+    Vert **pv = &v[0];
     int depth;
     indices.clear();
-    MultiscaleSortHilbert(pointFun, nPoint, indexs.get(), 64, .125, &depth, indices);
-    indices.push_back(nPoint);
+    MultiscaleSortHilbert(pv, (int)v.size(), 64, .125, &depth, indices);
+    indices.push_back(v.size());
   }
 };
 
@@ -129,13 +161,13 @@ void HilbertSortB::ComputeGrayCode(int n)
   }
 }
 
-size_t HilbertSortB::Split(PointFunctor vertices, size_t arraysize, size_t* indexs, int GrayCode0,
+int HilbertSortB::Split(Vert **vertices, int arraysize, int GrayCode0,
   int GrayCode1, double BoundingBoxXmin,
   double BoundingBoxXmax, double BoundingBoxYmin,
   double BoundingBoxYmax, double BoundingBoxZmin,
   double BoundingBoxZmax)
 {
-  //Vert *swapvert;
+  Vert *swapvert;
   int axis, d;
   double split;
 
@@ -160,43 +192,52 @@ size_t HilbertSortB::Split(PointFunctor vertices, size_t arraysize, size_t* inde
 
   // Partition the vertices into left- and right-arrays such that left points
   // have Hilbert indices lower than the right points.
-  size_t i = 0;
-  size_t j = arraysize - 1;
-
+  int i = 0;
+  int j = arraysize - 1;
   double point[3];
   // Partition the vertices into left- and right-arrays.
   if (d > 0) {
     do {
       for (; i < arraysize; i++) {
-        vertices(i, point);
-        if (point[axis] >= split) break;
+        GetPosition(vertices[i], point);
+        if (point[axis] >= split) {
+          break;
+        }
       }
       for (; j >= 0; j--) {
-        vertices(j, point);
-        if (point[axis] < split) break;
+        GetPosition(vertices[j], point);
+        if (point[axis] < split) 
+          break;
       }
       // Is the partition finished?
-      if (i == (j + 1)) break;
+      if (i == (j + 1)) 
+        break;
       // Swap i-th and j-th vertices.
-      std::swap(indexs[i], indexs[j]);
+      swapvert = vertices[i];
+      vertices[i] = vertices[j];
+      vertices[j] = swapvert;
       // Continue patitioning the array;
     } while (true);
   }
   else {
     do {
       for (; i < arraysize; i++) {
-        vertices(i, point);
-        if (point[axis] <= split) break;
+        GetPosition(vertices[i], point);
+        if (point[axis] <= split) 
+          break;
       }
       for (; j >= 0; j--) {
-        vertices(j, point);
-        if (point[axis] > split) break;
+        GetPosition(vertices[j], point);
+        if (point[axis] > split) 
+          break;
       }
       // Is the partition finished?
-      if (i == (j + 1)) break;
-
+      if (i == (j + 1))
+        break;
       // Swap i-th and j-th vertices.
-      std::swap(indexs[i], indexs[j]);
+      swapvert = vertices[i];
+      vertices[i] = vertices[j];
+      vertices[j] = swapvert;
       // Continue patitioning the array;
     } while (true);
   }
@@ -205,44 +246,48 @@ size_t HilbertSortB::Split(PointFunctor vertices, size_t arraysize, size_t* inde
 }
 
 // The sorting code is inspired by Tetgen 1.5
-void HilbertSortB::Sort(PointFunctor vertices, size_t arraysize, size_t* indexs, size_t e, size_t d,
+void HilbertSortB::Sort(Vert **vertices, int arraysize, int e, int d,
   double BoundingBoxXmin, double BoundingBoxXmax,
   double BoundingBoxYmin, double BoundingBoxYmax,
   double BoundingBoxZmin, double BoundingBoxZmax,
   int depth)
 {
   double x1, x2, y1, y2, z1, z2;
-  size_t p[9], w, e_w, d_w, k, ei, di;
+  int p[9], w, e_w, d_w, k, ei, di;
   int n = 3, mask = 7;
 
   p[0] = 0;
   p[8] = arraysize;
 
-  p[4] = Split(vertices, p[8], indexs, transgc[e][d][3], transgc[e][d][4],
+  p[4] = Split(vertices, p[8], transgc[e][d][3], transgc[e][d][4],
     BoundingBoxXmin, BoundingBoxXmax, BoundingBoxYmin,
     BoundingBoxYmax, BoundingBoxZmin, BoundingBoxZmax);
-  p[2] = Split(vertices, p[4], indexs, transgc[e][d][1], transgc[e][d][2],
+  p[2] = Split(vertices, p[4], transgc[e][d][1], transgc[e][d][2],
     BoundingBoxXmin, BoundingBoxXmax, BoundingBoxYmin,
     BoundingBoxYmax, BoundingBoxZmin, BoundingBoxZmax);
-  p[1] = Split(vertices, p[2], indexs, transgc[e][d][0], transgc[e][d][1],
+  p[1] = Split(vertices, p[2], transgc[e][d][0], transgc[e][d][1],
     BoundingBoxXmin, BoundingBoxXmax, BoundingBoxYmin,
     BoundingBoxYmax, BoundingBoxZmin, BoundingBoxZmax);
   p[3] =
-    Split(vertices, p[4] - p[2], indexs + p[2], transgc[e][d][2], transgc[e][d][3],
+    Split(&(vertices[p[2]]), p[4] - p[2], transgc[e][d][2], transgc[e][d][3],
       BoundingBoxXmin, BoundingBoxXmax, BoundingBoxYmin, BoundingBoxYmax,
-      BoundingBoxZmin, BoundingBoxZmax) + p[2];
+      BoundingBoxZmin, BoundingBoxZmax) +
+    p[2];
   p[6] =
-    Split(vertices, p[8] - p[4], indexs + p[4], transgc[e][d][5], transgc[e][d][6],
+    Split(&(vertices[p[4]]), p[8] - p[4], transgc[e][d][5], transgc[e][d][6],
       BoundingBoxXmin, BoundingBoxXmax, BoundingBoxYmin, BoundingBoxYmax,
-      BoundingBoxZmin, BoundingBoxZmax) + p[4];
+      BoundingBoxZmin, BoundingBoxZmax) +
+    p[4];
   p[5] =
-    Split(vertices, p[6] - p[4], indexs + p[4], transgc[e][d][4], transgc[e][d][5],
+    Split(&(vertices[p[4]]), p[6] - p[4], transgc[e][d][4], transgc[e][d][5],
       BoundingBoxXmin, BoundingBoxXmax, BoundingBoxYmin, BoundingBoxYmax,
-      BoundingBoxZmin, BoundingBoxZmax) + p[4];
+      BoundingBoxZmin, BoundingBoxZmax) +
+    p[4];
   p[7] =
-    Split(vertices, p[8] - p[6], indexs + p[6], transgc[e][d][6], transgc[e][d][7],
+    Split(&(vertices[p[6]]), p[8] - p[6], transgc[e][d][6], transgc[e][d][7],
       BoundingBoxXmin, BoundingBoxXmax, BoundingBoxYmin, BoundingBoxYmax,
-      BoundingBoxZmin, BoundingBoxZmax) + p[6];
+      BoundingBoxZmin, BoundingBoxZmax) +
+    p[6];
 
   if (maxDepth > 0) {
     if ((depth + 1) == maxDepth) {
@@ -295,16 +340,161 @@ void HilbertSortB::Sort(PointFunctor vertices, size_t arraysize, size_t* indexs,
         z1 = BoundingBoxZmin;
         z2 = 0.5 * (BoundingBoxZmin + BoundingBoxZmax);
       }
-      Sort(vertices, p[w + 1] - p[w], indexs + p[w], ei, di, x1, x2, y1, y2, z1, z2,
+      Sort(&(vertices[p[w]]), p[w + 1] - p[w], ei, di, x1, x2, y1, y2, z1, z2,
         depth + 1);
     }
   }
 }
 
+void SortHilbert(const std::vector<double>& points, std::vector<size_t> &indices)
+{
+  class SpatialSortingTraits
+  {
+    const std::vector<double>& pointFun;
+  public:
+    SpatialSortingTraits(const std::vector<double>& ptFun)
+      :pointFun(ptFun) {}
+
+    typedef size_t Point_3;
+
+    struct Less_x_3
+    {
+      const std::vector<double>& pointFun;
+
+      Less_x_3(const std::vector<double>& ptFun)
+        :pointFun(ptFun) {}
+
+      bool operator()(size_t p, size_t q) const
+      {
+        return pointFun[p*3] < pointFun[q * 3];
+      }
+    };
+
+    struct Less_y_3
+    {
+      const std::vector<double>& pointFun;
+      Less_y_3(const std::vector<double>& ptFun)
+        :pointFun(ptFun) {}
+
+      bool operator()(size_t p, size_t q) const
+      {
+        return pointFun[p * 3 + 1] < pointFun[q * 3 + 1];
+      }
+    };
+
+    struct Less_z_3
+    {
+      const std::vector<double>& pointFun;
+      Less_z_3(const std::vector<double>& ptFun)
+        :pointFun(ptFun) {}
+
+      bool operator()(size_t p, size_t q) const
+      {
+        return pointFun[p * 3 + 2] < pointFun[q * 3 + 2];
+      }
+    };
+
+
+    Less_x_3 less_x_3_object() const { return Less_x_3(pointFun); }
+
+    Less_y_3 less_y_3_object() const { return Less_y_3(pointFun); }
+
+    Less_z_3 less_z_3_object() const { return Less_z_3(pointFun); }
+  };
+  indices.resize(points.size()/3);
+  for (size_t i = 0; i < indices.size(); i++)
+  {
+    indices[i] = i;
+  }
+  SpatialSortingTraits gt(points);
+  spatial_sort(indices.begin(), indices.end(), gt);
+}
+
 void SortHilbert(size_t arraysize, PointFunctor vertices, std::vector<size_t> &indices)
 {
-  HilbertSortB h(1000);
-  h.Apply(arraysize, vertices, indices);
+  class SpatialSortingTraits
+  {
+    PointFunctor pointFun;
+  public:
+    SpatialSortingTraits(PointFunctor ptFun)
+      :pointFun(ptFun){}
+
+    typedef size_t Point_3;
+
+    struct Less_x_3
+    {
+      PointFunctor pointFun;
+     
+      Less_x_3(PointFunctor ptFun)
+        :pointFun(ptFun) {}
+
+      bool operator()(size_t p, size_t q) const
+      {
+        double x[3], y[3];
+        pointFun(p, x);
+        pointFun(q, y);
+        return x[0] < y[0];
+      }
+    };
+
+    struct Less_y_3
+    {
+      PointFunctor pointFun;
+      Less_y_3(PointFunctor ptFun)
+        :pointFun(ptFun) {}
+
+      bool operator()(size_t p, size_t q) const
+      {
+        double x[3], y[3];
+        pointFun(p, x);
+        pointFun(q, y);
+        return x[1] < y[1];
+      }
+    };
+
+    struct Less_z_3
+    {
+      PointFunctor pointFun;
+      Less_z_3(PointFunctor ptFun)
+        :pointFun(ptFun) {}
+
+      bool operator()(size_t p, size_t q) const
+      {
+        double x[3], y[3];
+        pointFun(p, x);
+        pointFun(q, y);
+        return x[2] < y[2];
+      }
+    };
+
+
+    Less_x_3 less_x_3_object() const { return Less_x_3(pointFun); }
+
+    Less_y_3 less_y_3_object() const { return Less_y_3(pointFun); }
+
+    Less_z_3 less_z_3_object() const { return Less_z_3(pointFun); }
+  };
+
+  if (0 ) {
+    indices.resize(arraysize);
+    for (size_t i = 0; i < arraysize; i++)
+    {
+      indices[i] = i;
+    }
+    SpatialSortingTraits gt(vertices);
+    spatial_sort(indices.begin(), indices.end(), gt);
+  }
+  else {
+    std::vector<HilbertSortB::Vert> vReal(arraysize);
+    std::vector<HilbertSortB::Vert *> v(arraysize);
+    HilbertSortB h(vertices,1000);
+    for (size_t i = 0; i < arraysize; i++)
+    {
+      vReal[i].pos = i;
+      v[i] = &(vReal[i]);
+    }
+    h.Apply(v, indices);
+  }
 }
 
 DELAU_NS_END
@@ -315,6 +505,18 @@ DELAU_NS_END
 #include "test/test_config.h"
 TEST(SortHilbertTest, test_SortHilbert)
 {
+  MEXT_ENABLE_ASSERT;
+  unsigned nPoint = 20000000;
+  srand(nPoint);
+  std::vector<size_t> indices;
+  std::vector<double> points(nPoint * 3);
+  for (size_t i=0;i<points.size();i++)
+  {
+    points[i] = rand() % 5000;
+  }
+
+  DELAU_NS::SortHilbert(points, indices);
+
   int xx = 0;
 }
 #endif
