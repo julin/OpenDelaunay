@@ -1,4 +1,5 @@
 #include <delaunay3d.h>
+
 #include <memory>
 #include <algorithm>
 #include <cmath>
@@ -307,3 +308,14 @@ void SortHilbert(size_t arraysize, PointFunctor vertices, std::vector<size_t> &i
 }
 
 DELAU_NS_END
+
+
+//&&&&&&&&&&&&&&&&&&&&&&&&&&&
+#if defined(_ENABLE_UNITEST)
+#include "test/test_config.h"
+TEST(SortHilbertTest, test_SortHilbert)
+{
+  int xx = 0;
+}
+#endif
+ 

@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 2.8 FATAL_ERROR)
 
+set(ENABLE_OPENMP 1)
 set(MODULE_NAME TestOpenDelaunay)
 
 project (${MODULE_NAME})
@@ -14,15 +15,17 @@ add_subdirectory(3rd/googletest)
 
 set(MODULE_SOURCES 
     src/delaunay3d.cxx
-	src/sort_hilbert.cxx
+    src/sort_hilbert.cxx
     inc/delaunay3d.h
+    test/test_config.h
 )
 
+include_directories(./)
 include_directories(${DIR_PROJ_ROOT}/inc)
 include_directories(${DIR_PROJ_ROOT}/3rd/googletest/googletest/include)
 
 add_boost()
-
+add_definitions(-D_ENABLE_UNITEST)
 
 list(APPEND EXTERNAL_LIBRARIES gtest gtest_main)
 add_executable(${MODULE_NAME} ${MODULE_SOURCES})

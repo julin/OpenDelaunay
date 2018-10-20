@@ -15,5 +15,7 @@ typedef enum { false = 0, true } bool;
 
 DELAU_NS_BEGIN
 typedef std::function<void(size_t, double*)> PointFunctor;
+void SortHilbert(size_t arraysize, PointFunctor vertices, std::vector<size_t> &indices);
 
+void DelaunayTriangulation(const size_t numThreads, size_t arraysize, PointFunctor vertices,std::vector<size_t> &);
 DELAU_NS_END
