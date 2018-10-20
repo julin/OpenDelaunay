@@ -1,22 +1,9 @@
-// Gmsh - Copyright (C) 1997-2018 C. Geuzaine, J.-F. Remacle
-//
-// See the LICENSE.txt file for license information. Please report all
-// bugs and problems to the public mailing list <gmsh@onelab.info>.
-
-#if defined(_OPENMP)
-#include <omp.h>
-#endif
-
-#include <stdio.h>
-#include <stdlib.h>
-#include <stack>
-#include <vector>
+#include <delaunay3d.h>
+#include <memory>
 #include <algorithm>
 #include <cmath>
-#include <memory>
-#include <functional>
-#include <delaunay3d.h>
 
+DELAU_NS_BEGIN
 struct HilbertSortB {
   // The code for generating table transgc from:
   // http://graphics.stanford.edu/~seander/bithacks.html.
@@ -26,15 +13,14 @@ struct HilbertSortB {
   int Limit;
   double bbox[2][3];
   void ComputeGrayCode(int n);
-  typedef std::function<void(size_t, double*)> PointFunctor;
 
 
-  size_t Split(PointFunctor vertices,size_t arraysize, size_t*,
+  size_t Split(PointFunctor vertices, size_t arraysize, size_t*,
     int GrayCode0, int GrayCode1,
     double BoundingBoxXmin, double BoundingBoxXmax,
     double BoundingBoxYmin, double BoundingBoxYmax,
     double BoundingBoxZmin, double BoundingBoxZmax);
-  void Sort(PointFunctor vertices,size_t arraysize, size_t*,
+  void Sort(PointFunctor vertices, size_t arraysize, size_t*,
     size_t e, size_t d,
     double BoundingBoxXmin, double BoundingBoxXmax,
     double BoundingBoxYmin, double BoundingBoxYmax,
@@ -49,31 +35,31 @@ struct HilbertSortB {
 
   void MultiscaleSortHilbert(PointFunctor vertices,
     size_t arraysize, size_t* indexs, size_t threshold,
-                             double ratio, int *depth,
-                             std::vector<size_t> &indices)
+    double ratio, int *depth,
+    std::vector<size_t> &indices)
   {
     size_t middle = 0;
-    if(arraysize >= threshold) {
+    if (arraysize >= threshold) {
       (*depth)++;
       middle = size_t(arraysize * ratio);
       MultiscaleSortHilbert(vertices, middle, indexs, threshold, ratio, depth, indices);
     }
     indices.push_back(middle);
     // printf("chunk starts at %d and size %d\n", middle, arraysize - middle);
-    Sort(vertices, arraysize-middle, indexs+middle, 0, 0, bbox[0][0],
-         bbox[1][0], bbox[0][1], bbox[1][1], bbox[0][2],
-         bbox[1][2], 0);
+    Sort(vertices, arraysize - middle, indexs + middle, 0, 0, bbox[0][0],
+      bbox[1][0], bbox[0][1], bbox[1][1], bbox[0][2],
+      bbox[1][2], 0);
   }
 
 
   void Apply(size_t nPoint, PointFunctor pointFun, std::vector<size_t> &indices)
   {
     indices.clear();
-    if(nPoint<1) return;
+    if (nPoint<1) return;
     double pos[3];
     std::unique_ptr<size_t[]> indexs(new size_t[nPoint]);
 
-    for(size_t i = 0; i < nPoint; i++) {
+    for (size_t i = 0; i < nPoint; i++) {
       indexs[i] = i;
       pointFun(i, pos);
       for (int j = 0; j < 3; j++)
@@ -92,7 +78,7 @@ struct HilbertSortB {
 
     int depth;
     indices.clear();
-    MultiscaleSortHilbert(pointFun,nPoint, indexs.get(), 64, .125, &depth, indices);
+    MultiscaleSortHilbert(pointFun, nPoint, indexs.get(), 64, .125, &depth, indices);
     indices.push_back(nPoint);
   }
 };
@@ -108,17 +94,17 @@ void HilbertSortB::ComputeGrayCode(int n)
   mask = (n == 2) ? 3 : 7;
 
   // Generate the Gray code sequence.
-  for(i = 0; i < N; i++) {
+  for (i = 0; i < N; i++) {
     gc[i] = i ^ (i >> 1);
   }
 
-  for(e = 0; e < N; e++) {
-    for(d = 0; d < n; d++) {
+  for (e = 0; e < N; e++) {
+    for (d = 0; d < n; d++) {
       // Calculate the end point (f).
       f = e ^ (1 << d); // Toggle the d-th bit of 'e'.
-      // travel_bit = 2**p, the bit we want to travel.
+                        // travel_bit = 2**p, the bit we want to travel.
       travel_bit = e ^ f;
-      for(i = 0; i < N; i++) {
+      for (i = 0; i < N; i++) {
         // // Rotate gc[i] left by (p + 1) % n bits.
         k = gc[i] * (travel_bit * 2);
         g = ((k | (k / N)) & mask);
@@ -130,23 +116,23 @@ void HilbertSortB::ComputeGrayCode(int n)
     } // d
   } // e
 
-  // Count the consecutive '1' bits (trailing) on the right.
+    // Count the consecutive '1' bits (trailing) on the right.
   tsb1mod3[0] = 0;
-  for(i = 1; i < N; i++) {
+  for (i = 1; i < N; i++) {
     v = ~i; // Count the 0s.
     v = (v ^ (v - 1)) >> 1; // Set v's trailing 0s to 1s and zero rest
-    for(c = 0; v; c++) {
+    for (c = 0; v; c++) {
       v >>= 1;
     }
     tsb1mod3[i] = c % n;
   }
 }
 
-size_t HilbertSortB::Split(PointFunctor vertices, size_t arraysize, size_t* indexs , int GrayCode0,
-                        int GrayCode1, double BoundingBoxXmin,
-                        double BoundingBoxXmax, double BoundingBoxYmin,
-                        double BoundingBoxYmax, double BoundingBoxZmin,
-                        double BoundingBoxZmax)
+size_t HilbertSortB::Split(PointFunctor vertices, size_t arraysize, size_t* indexs, int GrayCode0,
+  int GrayCode1, double BoundingBoxXmin,
+  double BoundingBoxXmax, double BoundingBoxYmin,
+  double BoundingBoxYmax, double BoundingBoxZmin,
+  double BoundingBoxZmax)
 {
   //Vert *swapvert;
   int axis, d;
@@ -157,10 +143,10 @@ size_t HilbertSortB::Split(PointFunctor vertices, size_t arraysize, size_t* inde
   axis = (GrayCode0 ^ GrayCode1) >> 1;
 
   // Calulate the split position along the axis.
-  if(axis == 0) {
+  if (axis == 0) {
     split = 0.5 * (BoundingBoxXmin + BoundingBoxXmax);
   }
-  else if(axis == 1) {
+  else if (axis == 1) {
     split = 0.5 * (BoundingBoxYmin + BoundingBoxYmax);
   }
   else { // == 2
@@ -178,51 +164,51 @@ size_t HilbertSortB::Split(PointFunctor vertices, size_t arraysize, size_t* inde
 
   double point[3];
   // Partition the vertices into left- and right-arrays.
-  if(d > 0) {
+  if (d > 0) {
     do {
-      for(; i < arraysize; i++) {
+      for (; i < arraysize; i++) {
         vertices(i, point);
-        if(point[axis] >= split) break;
+        if (point[axis] >= split) break;
       }
-      for(; j >= 0; j--) {
+      for (; j >= 0; j--) {
         vertices(j, point);
-        if(point[axis] < split) break;
+        if (point[axis] < split) break;
       }
       // Is the partition finished?
-      if(i == (j + 1)) break;
+      if (i == (j + 1)) break;
       // Swap i-th and j-th vertices.
       std::swap(indexs[i], indexs[j]);
       // Continue patitioning the array;
-    } while(true);
+    } while (true);
   }
   else {
     do {
-      for(; i < arraysize; i++) {
+      for (; i < arraysize; i++) {
         vertices(i, point);
-        if(point[axis] <= split) break;
+        if (point[axis] <= split) break;
       }
-      for(; j >= 0; j--) {
+      for (; j >= 0; j--) {
         vertices(j, point);
-        if(point[axis] > split) break;
+        if (point[axis] > split) break;
       }
       // Is the partition finished?
-      if(i == (j + 1)) break;
+      if (i == (j + 1)) break;
 
       // Swap i-th and j-th vertices.
       std::swap(indexs[i], indexs[j]);
       // Continue patitioning the array;
-    } while(true);
+    } while (true);
   }
 
   return i;
 }
 
 // The sorting code is inspired by Tetgen 1.5
-void HilbertSortB::Sort(PointFunctor vertices, size_t arraysize,size_t* indexs, size_t e, size_t d,
-                        double BoundingBoxXmin, double BoundingBoxXmax,
-                        double BoundingBoxYmin, double BoundingBoxYmax,
-                        double BoundingBoxZmin, double BoundingBoxZmax,
-                        int depth)
+void HilbertSortB::Sort(PointFunctor vertices, size_t arraysize, size_t* indexs, size_t e, size_t d,
+  double BoundingBoxXmin, double BoundingBoxXmax,
+  double BoundingBoxYmin, double BoundingBoxYmax,
+  double BoundingBoxZmin, double BoundingBoxZmax,
+  int depth)
 {
   double x1, x2, y1, y2, z1, z2;
   size_t p[9], w, e_w, d_w, k, ei, di;
@@ -232,42 +218,42 @@ void HilbertSortB::Sort(PointFunctor vertices, size_t arraysize,size_t* indexs, 
   p[8] = arraysize;
 
   p[4] = Split(vertices, p[8], indexs, transgc[e][d][3], transgc[e][d][4],
-               BoundingBoxXmin, BoundingBoxXmax, BoundingBoxYmin,
-               BoundingBoxYmax, BoundingBoxZmin, BoundingBoxZmax);
+    BoundingBoxXmin, BoundingBoxXmax, BoundingBoxYmin,
+    BoundingBoxYmax, BoundingBoxZmin, BoundingBoxZmax);
   p[2] = Split(vertices, p[4], indexs, transgc[e][d][1], transgc[e][d][2],
-               BoundingBoxXmin, BoundingBoxXmax, BoundingBoxYmin,
-               BoundingBoxYmax, BoundingBoxZmin, BoundingBoxZmax);
+    BoundingBoxXmin, BoundingBoxXmax, BoundingBoxYmin,
+    BoundingBoxYmax, BoundingBoxZmin, BoundingBoxZmax);
   p[1] = Split(vertices, p[2], indexs, transgc[e][d][0], transgc[e][d][1],
-               BoundingBoxXmin, BoundingBoxXmax, BoundingBoxYmin,
-               BoundingBoxYmax, BoundingBoxZmin, BoundingBoxZmax);
+    BoundingBoxXmin, BoundingBoxXmax, BoundingBoxYmin,
+    BoundingBoxYmax, BoundingBoxZmin, BoundingBoxZmax);
   p[3] =
-    Split(vertices, p[4] - p[2], indexs+ p[2], transgc[e][d][2], transgc[e][d][3],
-          BoundingBoxXmin, BoundingBoxXmax, BoundingBoxYmin, BoundingBoxYmax,
-          BoundingBoxZmin, BoundingBoxZmax) +p[2];
-p[6] =
+    Split(vertices, p[4] - p[2], indexs + p[2], transgc[e][d][2], transgc[e][d][3],
+      BoundingBoxXmin, BoundingBoxXmax, BoundingBoxYmin, BoundingBoxYmax,
+      BoundingBoxZmin, BoundingBoxZmax) + p[2];
+  p[6] =
     Split(vertices, p[8] - p[4], indexs + p[4], transgc[e][d][5], transgc[e][d][6],
-          BoundingBoxXmin, BoundingBoxXmax, BoundingBoxYmin, BoundingBoxYmax,
-          BoundingBoxZmin, BoundingBoxZmax) +p[4];
+      BoundingBoxXmin, BoundingBoxXmax, BoundingBoxYmin, BoundingBoxYmax,
+      BoundingBoxZmin, BoundingBoxZmax) + p[4];
   p[5] =
     Split(vertices, p[6] - p[4], indexs + p[4], transgc[e][d][4], transgc[e][d][5],
-          BoundingBoxXmin, BoundingBoxXmax, BoundingBoxYmin, BoundingBoxYmax,
-          BoundingBoxZmin, BoundingBoxZmax) +p[4];
+      BoundingBoxXmin, BoundingBoxXmax, BoundingBoxYmin, BoundingBoxYmax,
+      BoundingBoxZmin, BoundingBoxZmax) + p[4];
   p[7] =
     Split(vertices, p[8] - p[6], indexs + p[6], transgc[e][d][6], transgc[e][d][7],
-          BoundingBoxXmin, BoundingBoxXmax, BoundingBoxYmin, BoundingBoxYmax,
-          BoundingBoxZmin, BoundingBoxZmax) +p[6];
+      BoundingBoxXmin, BoundingBoxXmax, BoundingBoxYmin, BoundingBoxYmax,
+      BoundingBoxZmin, BoundingBoxZmax) + p[6];
 
-  if(maxDepth > 0) {
-    if((depth + 1) == maxDepth) {
+  if (maxDepth > 0) {
+    if ((depth + 1) == maxDepth) {
       // printf("max depth attained\n");
       return;
     }
   }
 
   // Recursively sort the points in sub-boxes.
-  for(w = 0; w < 8; w++) {
-    if((p[w + 1] - p[w]) > Limit) {
-      if(w == 0) {
+  for (w = 0; w < 8; w++) {
+    if ((p[w + 1] - p[w]) > Limit) {
+      if (w == 0) {
         e_w = 0;
       }
       else {
@@ -277,14 +263,14 @@ p[6] =
       k = e_w;
       e_w = ((k << (d + 1)) & mask) | ((k >> (n - d - 1)) & mask);
       ei = e ^ e_w;
-      if(w == 0) {
+      if (w == 0) {
         d_w = 0;
       }
       else {
         d_w = ((w % 2) == 0) ? tsb1mod3[w - 1] : tsb1mod3[w];
       }
       di = (d + d_w + 1) % n;
-      if(transgc[e][d][w] & 1) {
+      if (transgc[e][d][w] & 1) {
         x1 = 0.5 * (BoundingBoxXmin + BoundingBoxXmax);
         x2 = BoundingBoxXmax;
       }
@@ -292,7 +278,7 @@ p[6] =
         x1 = BoundingBoxXmin;
         x2 = 0.5 * (BoundingBoxXmin + BoundingBoxXmax);
       }
-      if(transgc[e][d][w] & 2) { // y-axis
+      if (transgc[e][d][w] & 2) { // y-axis
         y1 = 0.5 * (BoundingBoxYmin + BoundingBoxYmax);
         y2 = BoundingBoxYmax;
       }
@@ -300,7 +286,7 @@ p[6] =
         y1 = BoundingBoxYmin;
         y2 = 0.5 * (BoundingBoxYmin + BoundingBoxYmax);
       }
-      if(transgc[e][d][w] & 4) { // z-axis
+      if (transgc[e][d][w] & 4) { // z-axis
         z1 = 0.5 * (BoundingBoxZmin + BoundingBoxZmax);
         z2 = BoundingBoxZmax;
       }
@@ -309,13 +295,15 @@ p[6] =
         z2 = 0.5 * (BoundingBoxZmin + BoundingBoxZmax);
       }
       Sort(vertices, p[w + 1] - p[w], indexs + p[w], ei, di, x1, x2, y1, y2, z1, z2,
-           depth + 1);
+        depth + 1);
     }
   }
 }
 
-void SortHilbert(size_t arraysize, HilbertSortB::PointFunctor vertices,  std::vector<size_t> &indices)
+void SortHilbert(size_t arraysize, PointFunctor vertices, std::vector<size_t> &indices)
 {
   HilbertSortB h(1000);
   h.Apply(arraysize, vertices, indices);
 }
+
+DELAU_NS_END

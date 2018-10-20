@@ -13,9 +13,10 @@ include(${DIR_PROJ_ROOT}/cmake/common.cmake)
 add_subdirectory(3rd/googletest)
 
 set(MODULE_SOURCES 
-    src/delaunay3d.cpp
-	inc/delaunay3d.h
-	)
+    src/delaunay3d.cxx
+	src/sort_hilbert.cxx
+    inc/delaunay3d.h
+)
 
 include_directories(${DIR_PROJ_ROOT}/inc)
 include_directories(${DIR_PROJ_ROOT}/3rd/googletest/googletest/include)
